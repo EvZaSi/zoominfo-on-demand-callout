@@ -1,4 +1,4 @@
-# ZoomInfo On-Demand Lead Enrichment (ZoomInfo Integration)
+# ZoomInfo On-Demand Lead Enrichment (ZoomInfo/Salesforce Integration)
 
 Our company was running into a problem where the data we had in Salesforce was enough to auto-enrich the vast majority of leads. But our data coverage for companies under 1000 employees wasn't enough to cover the last 15-20% that came into Salesforce. In order to fill this gap, we needed on-demand data and we needed it bad!
 
