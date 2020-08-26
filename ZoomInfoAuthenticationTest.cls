@@ -19,6 +19,7 @@ public class ZoomInfoAuthenticationTest {
         }
     }
     @isTest static void ZoomInfoAuthenticationCorrectCredentials() {
+        /* This test verifies that a callout to the ZoomInfo authentication endpoint with the correct credentials will yield a status code of 200 */
         Test.setMock(HttpCalloutMock.class, new ZoomInfoHTTPAuthenticationResponse());
         Test.startTest();
         String correctUsername = 'testUsername';
@@ -29,6 +30,7 @@ public class ZoomInfoAuthenticationTest {
         System.assertEquals(200, testResponse.getStatusCode());
     }
     @isTest static void ZoomInfoAuthenticationWrongCredentials() {
+        /* This test verifies that a callout to the ZoomInfo authentication endpoint with the incorrect credentials will yield a status code of 401 and send an email to the SFDC Admin notifying them (as determined by the email invocation assertion) */
         Test.setMock(HttpCalloutMock.class, new ZoomInfoHTTPAuthenticationErrorResponse());
         Test.startTest();
         String wrongUsername = 'testUsername';

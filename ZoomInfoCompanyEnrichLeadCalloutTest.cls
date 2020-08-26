@@ -28,6 +28,7 @@ public class ZoomInfoCompanyEnrichLeadCalloutTest {
         }
     }
     @isTest static void ZoomInfoEnrichCorrectCredentialsAndJSON() {
+        /* The purpose of this test is to demonstrate that in the situation where we make a callout to the ZoomInfo Company Enrich endpoint with the correct credentials and our JSON request is correctly formatted, our returned status code should be 200 */
         Test.setMock(HttpCalloutMock.class, new ZoomInfoHTTPEnrichmentResponse());
         Test.startTest();
         String correctJwtToken = 'testToken';
@@ -38,6 +39,7 @@ public class ZoomInfoCompanyEnrichLeadCalloutTest {
         System.assertEquals(200, testResponse.getStatusCode());
     }
     @isTest static void ZoomInfoEnrichWrongCredentials() {
+        /* The purpose of this test is to demonstrate that when we make a callout to the ZoomInfo Company Enrich endpoint with the incorrect credentials, the returned status code is 401 and that an email notification was sent to the SFDC admin to alert them (as determined by the email invocations assert statement) */
         Test.setMock(HttpCalloutMock.class, new ZoomInfoHTTPEnrichmentErrorResponse());
         Test.startTest();
         String wrongJwtToken = 'testToken';
@@ -50,6 +52,7 @@ public class ZoomInfoCompanyEnrichLeadCalloutTest {
         System.assertEquals(401,testResponse.getStatusCode());
     }
     @isTest static void ZoomInfoEnrichIncorrectJSON() {
+        /* The purpose of this test is the demonstrate that when we make a callout to the ZoomInfo Company Enrich endpoint with the correct credentials but incorrectly formatted JSON, that the reponse will have a 400 status code and that an email will be sent to the SFDC admin to alert them (as determined by the email invocations assert statement) */
         Test.setMock(HttpCalloutMock.class, new ZoomInfoHTTPEnrichmentJSONErrorResponse());
         Test.startTest();
         String correctJwtToken = 'testToken';

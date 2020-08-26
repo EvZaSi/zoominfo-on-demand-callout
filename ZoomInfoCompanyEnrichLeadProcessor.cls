@@ -1,249 +1,222 @@
-public class ZoomInfoCompanyEnrichLeadProcessor {
-    @future (callout=true)
-    public static void enrichLeadsWithZIData(List<Id> leadIDsToProcess){
-        ZIAuthCreds__c ziCreds = ZIAuthCreds__c.getValues('ID');
+@isTest
+public class ZoomInfoCompanyEnrichLeadProcessorTest {
+    class SuccesfulEnrichLeadProcessMockCallout implements HttpCalloutMock{
+        public HttpResponse respond(HttpRequest req){
+            HttpResponse mockResponse = new HttpResponse();
+            if(req.getEndpoint().endsWith('authenticate')){
+                mockResponse.setHeader('Content-Type', 'application/json');
+                mockResponse.setStatusCode(200);
+                mockResponse.setBody('{"success":true,"jwt":"testresponse"}');
+            }else if(req.getEndpoint().endsWith('enrich/company')){
+                mockResponse.setHeader('Content-Type', 'application/json');
+                mockResponse.setStatusCode(200);
+                mockResponse.setBody('{"success":true,"data":{"outputFields":[["id","name","employeecount","street","city","state","country","naicscodes","primaryindustry"]],"result":[{"input":{"companycountry":"united states","companyname":"salesforce","companywebsite":"http://www.salesforce.com"},"data":[{"id":239305146,"name":"Salesforce","employeeCount":36000,"street":"415 Mission St, Fl 3","city":"San Francisco","state":"California","country":"United States","naicsCodes":[{"id":"541511","name":"Custom Computer Programming Services"},{"id":"511","name":"Publishing Industries (except Internet)"},{"id":"5415","name":"Computer Systems Design and Related Services"},{"id":"5182","name":"Data Processing, Hosting, and Related Services"},{"id":"51","name":"Information"},{"id":"54151","name":"Computer Systems Design and Related Services"},{"id":"511210","name":"Software Publishers"},{"id":"5112","name":"Software Publishers"},{"id":"51821","name":"Data Processing, Hosting, and Related Services"},{"id":"518","name":"Data Processing, Hosting, and Related Services"},{"id":"51121","name":"Software Publishers"},{"id":"518210","name":"Data Processing, Hosting, and Related Services"}],"primaryIndustry":["Software","Customer Relationship Management (CRM) Software"]}]}]}}');
 
-        System.debug('testing');
-
-        String jwtToken = getZoomInfoAuthToken(ziCreds.Username__c, ziCreds.Password__c);
-        if(jwtToken == 'failure'){
-            return;
-        }
-        List<Lead> updateList = new List<Lead>();
-        List<Id> idListForRunningAssignmentRules = new List<Id>();
-
-        List<Lead> leadsToProcess = generateLeadList(leadIDsToProcess);
-        List<Lead> leadListWithConfirmedEmails = removeLeadsWithNoEmail(leadsToProcess);
-
-
-        for(Lead indLead : leadListWithConfirmedEmails){
-            String requestJSONBody = createZoomInfoCompanyEnrichmentRequestBody(indLead);
-            String returnedJSON = sendZoomInfoCompanyEnrichmentCallOut(requestJSONBody, jwtToken);
-
-            if(verifyIfZoomInfoReturnedData(returnedJSON) == False){
-                notifyLeadsWithNoReturnedData(indLead);
-                indLead.ZoomInfo_Auto_Enrich__c = True;
-                updateList.add(indLead);
-                continue;
-            }else{      
-                parseAndAddZoomInfoData(indLead,returnedJSON);
-                indLead.ZoomInfo_Auto_Enrich__c = True;
-                updateList.add(indLead);
-                idListForRunningAssignmentRules.add(indLead.Id);
-            }
-        }
-        prepToRunAssignmentRules(updateList);
-        update updateList;
-
-    }
-    private static List<Lead> generateLeadList(List<Id> idList){
-        List<Lead> leadsToProcess = [SELECT Id,Email,DOZISF__ZoomInfo_Company_ID__c,Company,NumberOfEmployees,Street,City,State,Country,NAICS_Code__c,DOZISF__ZoomInfo_Last_Updated__c FROM Lead WHERE ID in :idList];
-        return leadsToProcess;
-    }
-    private static void prepToRunAssignmentRules(List<Lead> assignList){
-        Database.DMLOptions dmo = new Database.DMLOptions();
-        dmo.assignmentRuleHeader.useDefaultRule= true;          
-        for(Lead indLead:assignList){
-            indLead.setOptions(dmo);
+            } return mockResponse;
         }
     }
-    private static String getZoomInfoAuthToken(String username, String password){
-        HttpResponse authenticationResponse = ZoomInfoAuthentication.makeCallout(username,password);
-        JSONParser tokenParser = JSON.createParser(authenticationResponse.getBody());
-        String jwtToken;
-        if(authenticationResponse.getStatusCode()!=200){
-            jwtToken = 'failure';
-        }else{
-            while (tokenParser.nextToken() != null){
-                if(tokenParser.getCurrentName() == 'jwt' && tokenParser.getText() != 'jwt'){
-                    jwtToken = tokenParser.getText();
-                }
-            }
-        }
-        return jwtToken;
-    }
-    private static List<Lead> removeLeadsWithNoEmail(List<Lead> processLeadList){
-        List<Lead> removeList = new List<Lead>();
-        for(Lead indLead : processLeadList){
-            if(indLead.Email == null || indLead.Email == ''){
-                removeList.add(indLead);
-            }
-        }
-        if(removeList.size() > 0){
-            notifyLeadsWithNoEmail(removeList);
-        }
-        for(Lead removeLead : removeList){
-            processLeadList.remove(processLeadList.indexOf(removeLead));
-        }
-        return processLeadList;
-    }
-    private static void notifyLeadsWithNoEmail(List<Lead> leadsWithNoEmail){
-        String bodyText = 'When attempting to enrich leads via ZoomInfo, the following leads were unable to be added to the enrichment process due to a lack of an email: ';
-        for(Lead noEmailLead:leadsWithNoEmail){
-            bodyText += 'https://chromeriver.my.salesforce.com/' + String.valueOf(noEmailLead.Id);
-        }
-        Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
-        String[] toAddresses = new String[] {'evan.smith@chromeriver.com'};
-        mail.setToAddresses(toAddresses);
-        mail.setSubject('Leads without requisite data for ZoomInfo Enrichment');
-        mail.setPlainTextBody(bodyText);
-        Messaging.sendEmail(new Messaging.SingleEmailMessage[] {mail});
-    }
-    private static void notifyLeadsWithNoReturnedData(Lead leadWithNoReturnedData){
-        String bodyText = 'When attempting to enrich leads via ZoomInfo, the following lead resulted in no data found by ZoomInfo: ';
-        bodyText += 'https://chromeriver.my.salesforce.com/' + String.valueOf(leadWithNoReturnedData.Id);
-        bodyText += ' The lead had the following info when submitted to ZoomInfo: ';
-        bodyText += 'Company Name: ' + leadWithNoReturnedData.Company + '  ';
-        bodyText += 'Email : ' + leadWithNoReturnedData.Email;
+    class EnrichLeadProcessMockCalloutNoData implements HttpCalloutMock{
+        public HttpResponse respond(HttpRequest req){
+            HttpResponse mockResponse = new HttpResponse();
+            if(req.getEndpoint().endsWith('authenticate')){
+                mockResponse.setHeader('Content-Type', 'application/json');
+                mockResponse.setStatusCode(200);
+                mockResponse.setBody('{"success":true,"jwt":"testresponse"}');
+            }else if(req.getEndpoint().endsWith('enrich/company')){
+                mockResponse.setHeader('Content-Type', 'application/json');
+                mockResponse.setStatusCode(200);
+                mockResponse.setBody('{"success":true,"data":{"outputFields":[["id","name","employeecount","street","city","state","country","naicscodes","primaryindustry"]],"result":[{"input":{"companycountry":"united states","companyname":"asdasdsa","companywebsite":"asdasd"},"data":[]}]}}');
 
-        Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
-        String[] toAddresses = new String[] {'evan.smith@chromeriver.com'};
-        mail.setToAddresses(toAddresses);
-        mail.setSubject('Lead returned no data via ZoomInfo Enrichment API');
-        mail.setPlainTextBody(bodyText);
-        Messaging.sendEmail(new Messaging.SingleEmailMessage[] {mail});
+            } return mockResponse;
+        }
     }
-    private static String createZoomInfoCompanyEnrichmentRequestBody(Lead processLead){
-        String requestBody = '{"matchCompanyInput":[';
-        String leadInputs = '{';
-        if(processLead.Company != '[not provided]' || processLead.Company != null){
-            leadInputs += '"companyName":"' + processLead.Company + '",';
+    class UnsuccesfulAuthenticationLeadProcessMockCallout implements HttpCalloutMock{
+        public HttpResponse respond(HttpRequest req){
+            HttpResponse mockResponse = new HttpResponse();
+            if(req.getEndpoint().endsWith('authenticate')){
+                mockResponse.setHeader('Content-Type', 'application/json');
+                mockResponse.setStatusCode(400);
+                mockResponse.setBody('fail');
+            } return mockResponse;
         }
-        if(processLead.Country != null){
-            leadInputs += '"companyCountry":"' + processLead.Country + '",';
-        }
-        String emailString = String.valueOf(processLead.Email);
-        String companyWebsiteString = 'http://www.';
-        companyWebsiteString += emailString.substring(emailString.indexOfChar(64));
-        leadInputs += '"companyWebsite":"' + companyWebsiteString + '"}';
-
-        requestBody += leadInputs;               
-        requestBody += '],"outputFields":["id","name","employeeCount","street","city","state","country","naicsCodes","primaryIndustry"]}';
-
-        return requestBody;
     }
-    private static String sendZoomInfoCompanyEnrichmentCallOut(String requestBody, String jwtToken){
-            HttpResponse enrichmentResponse = ZoomInfoCompanyEnrichLeadCallout.zoominfoCallout(jwtToken,requestBody);
-            return enrichmentResponse.getBody();
-        }
-    private static String extractIndustryValueFromJSONData(String enrichDataJSON){
-        String extractedIndustry = enrichDataJSON.substringBetween('"primaryIndustry":["','"');
-        return extractedIndustry;
+    @TestSetup
+    static void makeData(){
+
+        ZIAuthCreds__c creds = new ZIAuthCreds__c(SetupOwnerId = '0051B00000DUTTEQA5',Username__c = 'test',Password__c = 'test');
+        insert creds;
+
+        List<Lead> testLeadList = new List<Lead>();
+
+        Lead badAuthCredentialsTest = new Lead(LastName = 'Test',LeadSource = 'Advertisement',Company = 'TestCompanybadAuth');
+
+        testLeadList.add(badAuthCredentialsTest);
+
+        Lead companyListedAsNotProvided = new Lead(LastName = 'Test',LeadSource = 'Advertisement', Company = '[not provided]',Email = 'companynotprovided@salesforce.com',Country = 'United States');
+
+        testLeadList.add(companyListedAsNotProvided);
+
+        Lead countryNotProvided = new Lead(LastName = 'Test',LeadSource = 'Advertisement', Company = 'Salesforce',Email = 'countrynotprovided@salesforce.com',Country = 'United States');
+
+        testLeadList.add(countryNotProvided);
+
+        Lead emailAbsent = new Lead(LastName = 'Test',LeadSource = 'Advertisement', Company = 'EmailNotProvided',Country = 'United States');
+
+        testLeadList.add(emailAbsent);
+
+        Lead badLeadData = new Lead(LastName = 'Test',LeadSource = 'Advertisement', Company = 'asdjakaasd',Email = 'asjdaskdja@aslkdasd.com',Country = 'United States');
+
+        testLeadList.add(badLeadData);
+
+        insert testLeadList;
 
     }
-    private static String normalizeIndustryToPicklistValues(String industryBeforeStandardization){
-        switch on industryBeforeStandardization{
-            when 'Business Services'{
-                industryBeforeStandardization = 'Professional Service';
-            }
-            when 'Consumer Services'{
-                industryBeforeStandardization = 'Retail';
-            }
-            when 'Energy, Utilities & Waste'{
-                industryBeforeStandardization = 'Utilities';
-            }
-            when 'Healthcare Services'{
-                industryBeforeStandardization = 'Healthcare';
-            }
-            when 'Holding Companies & Conglomerates'{
-                industryBeforeStandardization = 'Other';
-            }
-            when 'Hospitals & Physicians Clinics'{
-                industryBeforeStandardization = 'Healthcare';
-            }
-            when 'Law Firms & Legal Services'{
-                industryBeforeStandardization = 'Legal';
-            }
-            when 'Media & Internet'{
-                industryBeforeStandardization = 'Media';
-            }
-            when 'Minerals & Mining'{
-                industryBeforeStandardization = 'Agriculture';
-            }
-            when 'Organizations'{
-                industryBeforeStandardization = 'Other';
-            }
-            when 'Software'{
-                industryBeforeStandardization = 'Technology';
-            }
-            when 'Telecommunications'{
-                industryBeforeStandardization = 'Telecom';
-            }
-        }return industryBeforeStandardization;
+    @isTest static void enrichWithBadAuthCredentials() {
+        /* The purpose of this test is to prove out that an attempt to enrich with bad authentication credentials results in no update to the Lead, and results in a futureInvocation with an email send to notify the SFDC admin */
+        Lead queryLead = [SELECT Id FROM Lead WHERE Company = 'TestCompanybadAuth' limit 1];
+        List<Id> idList = new List<Id>();
+        idList.add(queryLead.Id);
 
+        Test.setMock(HttpCalloutMock.class, new UnsuccesfulAuthenticationLeadProcessMockCallout());
+
+        Test.startTest();
+
+        ZoomInfoCompanyEnrichLeadProcessor.enrichLeadsWithZIData(idList);
+
+        Integer futureInvocations = Limits.getFutureCalls();
+        Test.stopTest();
+
+        Lead queryLeadAfterUpdate = [SELECT Id,NAICS_Code__c,Company,NumberOfEmployees,Industry,DOZISF__ZoomInfo_Company_ID__c,Street,City,State,Country,ZoomInfo_Auto_Enrich__c FROM Lead WHERE Company = 'TestCompanybadAuth' limit 1];
+
+        System.assertEquals(1, futureInvocations);
+
+        System.assertEquals(null, queryLeadAfterUpdate.NAICS_Code__c);
+        System.assertEquals('TestCompanybadAuth', queryLeadAfterUpdate.Company);
+        System.assertEquals(null, queryLeadAfterUpdate.NumberOfEmployees);
+        System.assertEquals(null,queryLeadAfterUpdate.Industry);
+        System.assertEquals(null,queryLeadAfterUpdate.DOZISF__ZoomInfo_Company_ID__c);
+        System.assertEquals(null, queryLeadAfterUpdate.Street);
+        System.assertEquals(null, queryLeadAfterUpdate.City);
+        System.assertEquals(null, queryLeadAfterUpdate.State);
+        System.assertEquals(null, queryLeadAfterUpdate.Country);
+        System.assertEquals(False, queryLeadAfterUpdate.ZoomInfo_Auto_Enrich__c);
+        
     }
-    private static void parseAndAddZoomInfoData(Lead leadToEnrich,String enrichDataJSON){
-        Integer employeeOccurenceCount = 0;
-        Integer idOccurenceCount = 0;
-        Integer nameOccurenceCount = 0;
-        Boolean firstNAICSValue = True;
-        JSONParser parser = JSON.createParser(enrichDataJSON);
+    @isTest static void enrichWithCompanyNotProvided() {
+        /* This test is to prove out that a query with the Company field left blank will still yield a successful returned JSON that the Lead can be succesfully updated with */
+        Lead queryLead = [SELECT Id FROM Lead WHERE Email = 'companynotprovided@salesforce.com' limit 1];
+        List<Id> idList = new List<Id>();
+        idList.add(queryLead.Id);
 
-        while (parser.nextToken() != null){
-            if(parser.getCurrentName() == 'id'){
-                if(idOccurenceCount < 1){
-                    idOccurenceCount += 1;
-                }else if(idOccurenceCount == 1){
-                    leadToEnrich.DOZISF__ZoomInfo_Company_ID__c = parser.getText();
-                    idOccurenceCount = 99;
-                }    
-            }
-            if(parser.getCurrentName() == 'name'){
-                if(nameOccurenceCount < 1){
-                    nameOccurenceCount += 1;
-                }else if(nameOccurenceCount == 1){
-                    leadToEnrich.Company = parser.getText();
-                    nameOccurenceCount = 99;
-                }    
-            }
-            if(parser.getCurrentName() == 'employeeCount'){
-                if(employeeOccurenceCount < 1){
-                    employeeOccurenceCount += 1;
-                }else if(employeeOccurenceCount == 1){
-                    leadToEnrich.NumberOfEmployees = Integer.valueOf(parser.getText());
-                    employeeOccurenceCount = 99;
-                }    
-            }
-            if(parser.getCurrentName() == 'street'){
-                leadToEnrich.Street = parser.getText();
-            }
-            if(parser.getCurrentName() == 'city'){
-                leadToEnrich.City = parser.getText();
-            }
-            if(parser.getCurrentName() == 'state'){
-                leadToEnrich.State = parser.getText();
-            }
-            if(parser.getCurrentName() == 'country'){
-                leadToEnrich.Country = parser.getText();
-            }
-            if(parser.getCurrentName() == 'naicsCodes' && firstNAICSValue == True){
-                firstNAICSValue = False;
-                parser.nextValue();
-                parser.nextValue();
-                parser.nextValue();
-                leadToEnrich.NAICS_Code__c = parser.getText();
-            }
-        }
-        leadToEnrich.DOZISF__ZoomInfo_Last_Updated__c = System.today();
+        Test.setMock(HttpCalloutMock.class, new SuccesfulEnrichLeadProcessMockCallout());
 
-        String normalizeIndustryToPicklistValues = extractIndustryValueFromJSONData(enrichDataJSON);
-        leadToEnrich.Industry = normalizeIndustryToPicklistValues(normalizeIndustryToPicklistValues);
+        Test.startTest();
 
+        ZoomInfoCompanyEnrichLeadProcessor.enrichLeadsWithZIData(idList);
+
+        Test.stopTest();
+
+        Lead queryLeadAfterUpdate = [SELECT Id,NAICS_Code__c,Company,NumberOfEmployees,Industry,DOZISF__ZoomInfo_Company_ID__c,Street,City,State,Country,ZoomInfo_Auto_Enrich__c FROM Lead WHERE Email = 'companynotprovided@salesforce.com' limit 1];
+
+        System.assertEquals('541511', queryLeadAfterUpdate.NAICS_Code__c);
+        System.assertEquals('Salesforce', queryLeadAfterUpdate.Company);
+        System.assertEquals(36000, queryLeadAfterUpdate.NumberOfEmployees);
+        System.assertEquals('Technology',queryLeadAfterUpdate.Industry);
+        System.assertEquals('239305146',queryLeadAfterUpdate.DOZISF__ZoomInfo_Company_ID__c);
+        System.assertEquals('415 Mission St, Fl 3', queryLeadAfterUpdate.Street);
+        System.assertEquals('San Francisco', queryLeadAfterUpdate.City);
+        System.assertEquals('California', queryLeadAfterUpdate.State);
+        System.assertEquals('United States', queryLeadAfterUpdate.Country);
+        System.assertEquals(True, queryLeadAfterUpdate.ZoomInfo_Auto_Enrich__c);
+        
     }
-    private static Boolean verifyIfZoomInfoReturnedData(String enrichDataJSON){
-        Boolean returnedUsableData = True;
-        JSONParser parser = JSON.createParser(enrichDataJSON);
+    @isTest static void enrichWithCountryNotProvided() {
+        /* This test is to prove out that a query with the Country field left blank will still yield a successful returned JSON that the Lead can be successfully updated with */
+        Lead queryLead = [SELECT Id FROM Lead WHERE Email = 'countrynotprovided@salesforce.com' limit 1];
+        List<Id> idList = new List<Id>();
+        idList.add(queryLead.Id);
 
-        while (parser.nextToken() != null){
-            if(parser.getCurrentName() == 'data' && parser.getCurrentToken() == JSONToken.START_ARRAY && parser.nextToken() == JSONToken.END_ARRAY){
-                    returnedUsableData = False;
-            }
-        }
-        return returnedUsableData;
+        Test.setMock(HttpCalloutMock.class, new SuccesfulEnrichLeadProcessMockCallout());
+
+        Test.startTest();
+
+        ZoomInfoCompanyEnrichLeadProcessor.enrichLeadsWithZIData(idList);
+
+        Test.stopTest();
+
+        Lead queryLeadAfterUpdate = [SELECT Id,NAICS_Code__c,Company,NumberOfEmployees,Industry,DOZISF__ZoomInfo_Company_ID__c,Street,City,State,Country,ZoomInfo_Auto_Enrich__c FROM Lead WHERE Email = 'countrynotprovided@salesforce.com' limit 1];
+
+        System.assertEquals('541511', queryLeadAfterUpdate.NAICS_Code__c);
+        System.assertEquals('Salesforce', queryLeadAfterUpdate.Company);
+        System.assertEquals(36000, queryLeadAfterUpdate.NumberOfEmployees);
+        System.assertEquals('Technology',queryLeadAfterUpdate.Industry);
+        System.assertEquals('239305146',queryLeadAfterUpdate.DOZISF__ZoomInfo_Company_ID__c);
+        System.assertEquals('415 Mission St, Fl 3', queryLeadAfterUpdate.Street);
+        System.assertEquals('San Francisco', queryLeadAfterUpdate.City);
+        System.assertEquals('California', queryLeadAfterUpdate.State);
+        System.assertEquals('United States', queryLeadAfterUpdate.Country);
+        System.assertEquals(True, queryLeadAfterUpdate.ZoomInfo_Auto_Enrich__c);
     }
+    @isTest static void enrichWithEmailNotProvided() {
+        /* This test is to prove out that calling the ZoomInfoCompanyEnrichLead Processor with a blank or no email provided will not result in a callout being made, an email will be sent to the SFDC admin notifying them that the callout was unable to be made (proven by the assertion with futureInvocations) and the Lead will not be updated with any enriched data */
+        Lead queryLead = [SELECT Id FROM Lead WHERE Company = 'EmailNotProvided' limit 1];
+        List<Id> idList = new List<Id>();
+        idList.add(queryLead.Id);
 
+        Test.setMock(HttpCalloutMock.class, new SuccesfulEnrichLeadProcessMockCallout());
 
+        Test.startTest();
 
+        ZoomInfoCompanyEnrichLeadProcessor.enrichLeadsWithZIData(idList);
 
+        Integer futureInvocations = Limits.getFutureCalls();
 
+        Test.stopTest();
+
+        Lead queryLeadAfterUpdate = [SELECT Id,NAICS_Code__c,Company,NumberOfEmployees,Industry,DOZISF__ZoomInfo_Company_ID__c,Street,City,State,Country,ZoomInfo_Auto_Enrich__c FROM Lead WHERE Company = 'EmailNotProvided' limit 1];
+
+        System.assertEquals(1, futureInvocations);
+
+        System.assertEquals(null, queryLeadAfterUpdate.NAICS_Code__c);
+        System.assertEquals('EmailNotProvided', queryLeadAfterUpdate.Company);
+        System.assertEquals(null, queryLeadAfterUpdate.NumberOfEmployees);
+        System.assertEquals(null,queryLeadAfterUpdate.Industry);
+        System.assertEquals(null,queryLeadAfterUpdate.DOZISF__ZoomInfo_Company_ID__c);
+        System.assertEquals(null, queryLeadAfterUpdate.Street);
+        System.assertEquals(null, queryLeadAfterUpdate.City);
+        System.assertEquals(null, queryLeadAfterUpdate.State);
+        System.assertEquals('United States', queryLeadAfterUpdate.Country);
+        System.assertEquals(False, queryLeadAfterUpdate.ZoomInfo_Auto_Enrich__c);
+    }
+    @isTest static void noDataReturned() {
+        /* This test is to prove out that in the event an enrichment callout is successfuly made and no data is returned, the Lead will not be updated and an email will be sent to the SFDC admin notifying them that no data could be found */
+        Lead queryLead = [SELECT Id FROM Lead WHERE Email = 'asjdaskdja@aslkdasd.com' limit 1];
+        List<Id> idList = new List<Id>();
+        idList.add(queryLead.Id);
+
+        Test.setMock(HttpCalloutMock.class, new EnrichLeadProcessMockCalloutNoData());
+
+        Test.startTest();
+
+        ZoomInfoCompanyEnrichLeadProcessor.enrichLeadsWithZIData(idList);
+
+        Integer futureInvocations = Limits.getFutureCalls();
+
+        Test.stopTest();
+
+        Lead queryLeadAfterUpdate = [SELECT Id,NAICS_Code__c,Company,NumberOfEmployees,Industry,DOZISF__ZoomInfo_Company_ID__c,Street,City,State,Country,ZoomInfo_Auto_Enrich__c FROM Lead WHERE Email = 'asjdaskdja@aslkdasd.com' limit 1];
+
+        System.assertEquals(1, futureInvocations);
+
+        System.assertEquals(null, queryLeadAfterUpdate.NAICS_Code__c);
+        System.assertEquals('asdjakaasd', queryLeadAfterUpdate.Company);
+        System.assertEquals(null, queryLeadAfterUpdate.NumberOfEmployees);
+        System.assertEquals(null,queryLeadAfterUpdate.Industry);
+        System.assertEquals(null,queryLeadAfterUpdate.DOZISF__ZoomInfo_Company_ID__c);
+        System.assertEquals(null, queryLeadAfterUpdate.Street);
+        System.assertEquals(null, queryLeadAfterUpdate.City);
+        System.assertEquals(null, queryLeadAfterUpdate.State);
+        System.assertEquals('United States', queryLeadAfterUpdate.Country);
+        System.assertEquals(True, queryLeadAfterUpdate.ZoomInfo_Auto_Enrich__c);
+    }
 }

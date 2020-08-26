@@ -72,6 +72,7 @@ public class ZoomInfoCompanyEnrichLeadProcessorTest {
 
     }
     @isTest static void enrichWithBadAuthCredentials() {
+        /* The purpose of this test is to prove out that an attempt to enrich with bad authentication credentials results in no update to the Lead, and results in a futureInvocation with an email send to notify the SFDC admin */
         Lead queryLead = [SELECT Id FROM Lead WHERE Company = 'TestCompanybadAuth' limit 1];
         List<Id> idList = new List<Id>();
         idList.add(queryLead.Id);
@@ -102,6 +103,7 @@ public class ZoomInfoCompanyEnrichLeadProcessorTest {
         
     }
     @isTest static void enrichWithCompanyNotProvided() {
+        /* This test is to prove out that a query with the Company field left blank will still yield a successful returned JSON that the Lead can be succesfully updated with */
         Lead queryLead = [SELECT Id FROM Lead WHERE Email = 'companynotprovided@salesforce.com' limit 1];
         List<Id> idList = new List<Id>();
         idList.add(queryLead.Id);
@@ -129,6 +131,7 @@ public class ZoomInfoCompanyEnrichLeadProcessorTest {
         
     }
     @isTest static void enrichWithCountryNotProvided() {
+        /* This test is to prove out that a query with the Country field left blank will still yield a successful returned JSON that the Lead can be successfully updated with */
         Lead queryLead = [SELECT Id FROM Lead WHERE Email = 'countrynotprovided@salesforce.com' limit 1];
         List<Id> idList = new List<Id>();
         idList.add(queryLead.Id);
@@ -155,6 +158,7 @@ public class ZoomInfoCompanyEnrichLeadProcessorTest {
         System.assertEquals(True, queryLeadAfterUpdate.ZoomInfo_Auto_Enrich__c);
     }
     @isTest static void enrichWithEmailNotProvided() {
+        /* This test is to prove out that calling the ZoomInfoCompanyEnrichLead Processor with a blank or no email provided will not result in a callout being made, an email will be sent to the SFDC admin notifying them that the callout was unable to be made (proven by the assertion with futureInvocations) and the Lead will not be updated with any enriched data */
         Lead queryLead = [SELECT Id FROM Lead WHERE Company = 'EmailNotProvided' limit 1];
         List<Id> idList = new List<Id>();
         idList.add(queryLead.Id);
@@ -185,6 +189,7 @@ public class ZoomInfoCompanyEnrichLeadProcessorTest {
         System.assertEquals(False, queryLeadAfterUpdate.ZoomInfo_Auto_Enrich__c);
     }
     @isTest static void noDataReturned() {
+        /* This test is to prove out that in the event an enrichment callout is successfuly made and no data is returned, the Lead will not be updated and an email will be sent to the SFDC admin notifying them that no data could be found */
         Lead queryLead = [SELECT Id FROM Lead WHERE Email = 'asjdaskdja@aslkdasd.com' limit 1];
         List<Id> idList = new List<Id>();
         idList.add(queryLead.Id);
